@@ -1,10 +1,9 @@
 import javax.swing.*;
 import java.awt.*;
 import java.awt.event.*;
-import java.awt.geom.*;
+import java.awt.image.BufferedImage;
 import java.util.*;
 import java.util.List;
-import java.awt.image.BufferedImage;
 
 /**
  * ╔══════════════════════════════════════════════════════╗
@@ -26,7 +25,6 @@ public class Main extends JFrame {
         setTitle("GTA VII - Vice City Reborn | By SAHI AHMED YASSIN");
         setDefaultCloseOperation(EXIT_ON_CLOSE);
         setResizable(false);
-
         GamePanel panel = new GamePanel();
         add(panel);
         pack();
@@ -35,53 +33,12 @@ public class Main extends JFrame {
 }
 
 // ══════════════════════════════════════════════════════
-//  GAME PANEL - Core engine
-// ══════════════════════════════════════════════════════
 class GamePanel extends JPanel implements KeyListener, ActionListener {
 
     static final int W = 900, H = 650;
-    static final int TILE = 40;
-
-    // Game States
-    enum State { SPLASH, PLAYING, PAUSED, GAMEOVER, WIN }
-    State state = State.SPLASH;
-
-    // Player
-    Player player;
-
-    // World
-    List<Building> buildings = new ArrayList<>();
-    List<Car> cars = new ArrayList<>();
-    List<Coin> coins = new ArrayList<>();
-    List<Bullet> bullets = new ArrayList<>();
-    List<Cop> cops = new ArrayList<>();
-    List<Explosion> explosions = new ArrayList<>();
-    List<Particle> particles = new ArrayList<>();
-
-    // Camera
-    int camX = 0, camY = 0;
     static final int MAP_W = 2400, MAP_H = 2400;
 
-    // UI
-    int score = 0;
-    int wantedLevel = 0;
-    long splashTimer = 0;
-    float titleAlpha = 0f;
-    boolean[] keys = new boolean[256];
-
-    // Wanted system
-    int wantedCooldown = 0;
-
-    // Timers
-    javax.swing.Timer gameTimer;
-    int frame = 0;
-
-    // Fonts
-    Font pixelFont;
-    Font titleFont;
-    Font uiFont;
-
-    // Colors - Neon Vice City Palette
+    // Neon Colors
     static final Color NEON_PINK   = new Color(255, 20, 147);
     static final Color NEON_CYAN   = new Color(0, 255, 220);
     static final Color NEON_YELLOW = new Color(255, 220, 0);
@@ -89,95 +46,113 @@ class GamePanel extends JPanel implements KeyListener, ActionListener {
     static final Color ROAD_DARK   = new Color(30, 30, 35);
     static final Color ROAD_LINE   = new Color(255, 220, 0, 120);
     static final Color SIDEWALK    = new Color(60, 55, 70);
-    static final Color GRASS       = new Color(20, 80, 40);
+    static final Color GRASS_COL   = new Color(20, 80, 40);
     static final Color BLOOD_RED   = new Color(200, 0, 30);
+
+    enum State { SPLASH, PLAYING, PAUSED, GAMEOVER, WIN }
+    State state = State.SPLASH;
+
+    Player player;
+    List<Building>  buildings  = new ArrayList<>();
+    List<CarObj>    cars       = new ArrayList<>();
+    List<Coin>      coins      = new ArrayList<>();
+    List<Bullet>    bullets    = new ArrayList<>();
+    List<Cop>       cops       = new ArrayList<>();
+    List<Explosion> explosions = new ArrayList<>();
+    List<Particle>  particles  = new ArrayList<>();
+
+    int camX = 0, camY = 0;
+    int score = 0, wantedLevel = 0, wantedCooldown = 0;
+    int frame = 0;
+    long splashStart = 0;
+    boolean[] keys = new boolean[256];
+
+    // Double buffer
+    BufferedImage buffer;
+    Graphics2D    bufG;
+
+    javax.swing.Timer gameTimer;
 
     GamePanel() {
         setPreferredSize(new Dimension(W, H));
+        setBackground(Color.BLACK);
+        setDoubleBuffered(true);
         setFocusable(true);
         addKeyListener(this);
 
-        pixelFont  = new Font("Courier New", Font.BOLD, 13);
-        titleFont  = new Font("Impact", Font.BOLD, 72);
-        uiFont     = new Font("Courier New", Font.BOLD, 16);
+        buffer = new BufferedImage(W, H, BufferedImage.TYPE_INT_RGB);
+        bufG   = buffer.createGraphics();
+        bufG.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
 
         initWorld();
-
+        splashStart = System.currentTimeMillis();
         gameTimer = new javax.swing.Timer(16, this);
         gameTimer.start();
-        splashTimer = System.currentTimeMillis();
     }
 
+    // ── WORLD INIT ─────────────────────────────────────
     void initWorld() {
-        player  = new Player(MAP_W / 2, MAP_H / 2);
-        buildings.clear(); cars.clear(); coins.clear(); cops.clear();
+        player = new Player(MAP_W / 2, MAP_H / 2);
+        buildings.clear(); cars.clear(); coins.clear();
+        cops.clear(); bullets.clear(); explosions.clear(); particles.clear();
+        score = 0; wantedLevel = 0; wantedCooldown = 0;
 
         Random rng = new Random(42);
 
-        // City blocks
-        int[][] blockGrid = {
-            {200,200}, {400,200}, {600,200}, {800,200}, {1000,200}, {1200,200}, {1600,200}, {1800,200},
-            {200,500}, {600,500}, {1000,500}, {1400,500}, {1800,500},
-            {200,800}, {400,800}, {800,800}, {1200,800}, {1600,800}, {2000,800},
+        int[][] blockPos = {
+            {200,200},{500,200},{800,200},{1100,200},{1400,200},{1700,200},{2000,200},
+            {200,500},{600,500},{1000,500},{1400,500},{1800,500},
+            {200,800},{500,800},{900,800},{1300,800},{1700,800},{2100,800},
             {200,1100},{600,1100},{1000,1100},{1400,1100},{1800,1100},
-            {200,1400},{400,1400},{800,1400},{1200,1400},{1600,1400},{2000,1400},
+            {200,1400},{500,1400},{900,1400},{1300,1400},{1700,1400},{2100,1400},
             {200,1700},{600,1700},{1000,1700},{1400,1700},{1800,1700},
-            {200,2000},{400,2000},{800,2000},{1200,2000},{1600,2000},{2000,2000},
+            {200,2000},{500,2000},{900,2000},{1300,2000},{1700,2000},{2100,2000},
         };
-
-        Color[] buildingColors = {
+        Color[] bColors = {
             new Color(60,20,80), new Color(10,50,80), new Color(80,20,20),
             new Color(20,70,50), new Color(70,60,10), new Color(40,10,60)
         };
-
-        for (int[] b : blockGrid) {
-            int bw = 80 + rng.nextInt(120);
-            int bh = 80 + rng.nextInt(120);
-            Color bc = buildingColors[rng.nextInt(buildingColors.length)];
-            Color nc = rng.nextBoolean() ? NEON_PINK : (rng.nextBoolean() ? NEON_CYAN : NEON_YELLOW);
-            buildings.add(new Building(b[0], b[1], bw, bh, bc, nc));
+        Color[] nColors = { NEON_PINK, NEON_CYAN, NEON_YELLOW, NEON_ORANGE };
+        for (int[] bp : blockPos) {
+            int bw = 80 + rng.nextInt(110);
+            int bh = 80 + rng.nextInt(110);
+            buildings.add(new Building(bp[0], bp[1], bw, bh,
+                bColors[rng.nextInt(bColors.length)],
+                nColors[rng.nextInt(nColors.length)]));
         }
 
-        // Cars on roads
+        Color[] carColors = { BLOOD_RED, new Color(30,100,255), NEON_YELLOW,
+                              new Color(0,200,80), new Color(200,200,200), NEON_PINK };
         int[][] carSpawns = {
-            {MAP_W/2-300, MAP_H/2+100}, {MAP_W/2+200, MAP_H/2-200},
-            {MAP_W/2-500, MAP_H/2-300}, {MAP_W/2+400, MAP_H/2+300},
-            {MAP_W/2, MAP_H/2+500},     {MAP_W/2-700, MAP_H/2+500},
-            {MAP_W/2+600, MAP_H/2-500}, {MAP_W/2-200, MAP_H/2-600},
+            {MAP_W/2-300,MAP_H/2+100},{MAP_W/2+200,MAP_H/2-200},
+            {MAP_W/2-500,MAP_H/2-300},{MAP_W/2+400,MAP_H/2+300},
+            {MAP_W/2,MAP_H/2+500},    {MAP_W/2-700,MAP_H/2+500},
+            {MAP_W/2+600,MAP_H/2-500},{MAP_W/2-200,MAP_H/2-600},
         };
-        Color[] carColors = {
-            BLOOD_RED, new Color(30,100,255), new Color(255,180,0),
-            new Color(0,200,80), new Color(200,200,200), NEON_PINK
-        };
-        for (int[] cs : carSpawns) {
-            cars.add(new Car(cs[0], cs[1], carColors[rng.nextInt(carColors.length)], rng.nextInt(4)));
-        }
+        for (int[] cs : carSpawns)
+            cars.add(new CarObj(cs[0], cs[1], carColors[rng.nextInt(carColors.length)], rng.nextInt(4)));
 
-        // Coins
-        for (int i = 0; i < 40; i++) {
-            int cx = 200 + rng.nextInt(MAP_W - 400);
-            int cy = 200 + rng.nextInt(MAP_H - 400);
-            coins.add(new Coin(cx, cy));
-        }
-
-        score = 0; wantedLevel = 0; wantedCooldown = 0;
-        bullets.clear(); explosions.clear(); particles.clear();
+        for (int i = 0; i < 40; i++)
+            coins.add(new Coin(200 + rng.nextInt(MAP_W-400), 200 + rng.nextInt(MAP_H-400)));
     }
 
-    // ── UPDATE ─────────────────────────────────────────
-    @Override public void actionPerformed(ActionEvent e) {
+    // ── GAME LOOP ──────────────────────────────────────
+    @Override
+    public void actionPerformed(ActionEvent e) {
         frame++;
         if (state == State.PLAYING) update();
+        render();
         repaint();
     }
 
     void update() {
         handleInput();
         player.update(MAP_W, MAP_H);
-        updateCars();
+        for (CarObj c : cars) c.update(MAP_W, MAP_H);
+        checkCarProximity();
         updateBullets();
         updateCops();
-        updatePickups();
+        updateCoins();
         updateParticles();
         updateExplosions();
         updateCamera();
@@ -185,64 +160,55 @@ class GamePanel extends JPanel implements KeyListener, ActionListener {
         if (wantedCooldown == 0 && wantedLevel > 0 && frame % 300 == 0)
             wantedLevel = Math.max(0, wantedLevel - 1);
         if (score >= 2000) state = State.WIN;
+        if (player.hp <= 0) state = State.GAMEOVER;
     }
 
     void handleInput() {
-        double speed = player.inCar ? 4.5 : 2.5;
-        if (keys[KeyEvent.VK_SHIFT]) speed *= 1.8;
-
-        if (keys[KeyEvent.VK_W] || keys[KeyEvent.VK_UP])    { player.vy = -speed; player.dir = 0; }
-        else if (keys[KeyEvent.VK_S] || keys[KeyEvent.VK_DOWN])  { player.vy =  speed; player.dir = 2; }
-        else player.vy = 0;
-        if (keys[KeyEvent.VK_A] || keys[KeyEvent.VK_LEFT])  { player.vx = -speed; player.dir = 3; }
-        else if (keys[KeyEvent.VK_D] || keys[KeyEvent.VK_RIGHT]) { player.vx =  speed; player.dir = 1; }
-        else player.vx = 0;
+        double spd = player.inCar ? 4.5 : 2.5;
+        if (keys[KeyEvent.VK_SHIFT]) spd *= 1.7;
+        boolean up    = keys[KeyEvent.VK_W] || keys[KeyEvent.VK_UP];
+        boolean down  = keys[KeyEvent.VK_S] || keys[KeyEvent.VK_DOWN];
+        boolean left  = keys[KeyEvent.VK_A] || keys[KeyEvent.VK_LEFT];
+        boolean right = keys[KeyEvent.VK_D] || keys[KeyEvent.VK_RIGHT];
+        player.vy = up ? -spd : down  ? spd : 0;
+        player.vx = left ? -spd : right ? spd : 0;
+        if (up)    player.dir = 0;
+        if (right) player.dir = 1;
+        if (down)  player.dir = 2;
+        if (left)  player.dir = 3;
     }
 
-    void updateCars() {
-        for (Car c : cars) c.update(MAP_W, MAP_H);
-
-        // Car collision / enter
-        if (!player.inCar) {
-            for (Car c : cars) {
-                if (dist(player.x, player.y, c.x, c.y) < 35) {
-                    // Player near car - show prompt (handled in render)
-                    c.nearPlayer = true;
-                } else c.nearPlayer = false;
-            }
-        }
+    void checkCarProximity() {
+        for (CarObj c : cars) c.nearPlayer = false;
+        if (!player.inCar)
+            for (CarObj c : cars)
+                if (dist(player.x, player.y, c.x, c.y) < 40) c.nearPlayer = true;
     }
 
     void updateBullets() {
         Iterator<Bullet> bi = bullets.iterator();
         while (bi.hasNext()) {
-            Bullet b = bi.next();
-            b.update();
+            Bullet b = bi.next(); b.update();
             if (b.x < 0 || b.x > MAP_W || b.y < 0 || b.y > MAP_H || b.life <= 0) { bi.remove(); continue; }
-            // Hit cars
-            for (Car c : cars) {
-                if (dist(b.x, b.y, c.x, c.y) < 20) {
-                    c.hp -= b.fromPlayer ? 25 : 0;
-                    bi.remove();
-                    if (c.hp <= 0) { explodeCar(c); score += 150; raiseWanted(2); }
-                    break;
-                }
-            }
-            // Hit cops
+            boolean removed = false;
             if (b.fromPlayer) {
-                for (Cop cop : cops) {
-                    if (dist(b.x, b.y, cop.x, cop.y) < 16) {
-                        cop.hp -= 40;
-                        bi.remove(); break;
+                for (CarObj c : cars) {
+                    if (!removed && dist(b.x, b.y, c.x, c.y) < 22) {
+                        c.hp -= 30; bi.remove(); removed = true;
+                        if (c.hp <= 0) { explodeCar(c); score += 150; raiseWanted(2); }
                     }
                 }
-            }
-            // Hit player
-            if (!b.fromPlayer && dist(b.x, b.y, player.x, player.y) < 18) {
-                player.hp -= 10;
-                bi.remove();
-                spawnParticles((int)player.x, (int)player.y, BLOOD_RED, 6);
-                if (player.hp <= 0) state = State.GAMEOVER;
+                for (Cop cop : cops) {
+                    if (!removed && dist(b.x, b.y, cop.x, cop.y) < 18) {
+                        cop.hp -= 40; bi.remove(); removed = true;
+                        if (cop.hp <= 0) score += 100;
+                    }
+                }
+            } else {
+                if (!removed && dist(b.x, b.y, player.x, player.y) < 18) {
+                    player.hp -= 8; bi.remove(); removed = true;
+                    spawnParticles((int)player.x, (int)player.y, BLOOD_RED, 5);
+                }
             }
         }
         cars.removeIf(c -> c.hp <= 0);
@@ -250,420 +216,360 @@ class GamePanel extends JPanel implements KeyListener, ActionListener {
     }
 
     void updateCops() {
-        // Spawn cops based on wanted level
-        if (wantedLevel > 0 && frame % (120 / wantedLevel) == 0 && cops.size() < wantedLevel * 2) {
+        if (wantedLevel > 0 && frame % Math.max(30, 120/wantedLevel) == 0 && cops.size() < wantedLevel * 2) {
             double ang = Math.random() * Math.PI * 2;
-            double spawnR = 350;
-            cops.add(new Cop((int)(player.x + Math.cos(ang)*spawnR), (int)(player.y + Math.sin(ang)*spawnR)));
+            cops.add(new Cop((int)(player.x + Math.cos(ang)*380), (int)(player.y + Math.sin(ang)*380)));
         }
         for (Cop cop : cops) {
-            cop.update(player, frame);
-            if (cop.shootCooldown <= 0 && dist(cop.x, cop.y, player.x, player.y) < 250) {
+            cop.update(player);
+            if (cop.shootCD <= 0 && dist(cop.x, cop.y, player.x, player.y) < 260) {
                 double angle = Math.atan2(player.y - cop.y, player.x - cop.x);
                 bullets.add(new Bullet(cop.x, cop.y, angle, false));
-                cop.shootCooldown = 60;
+                cop.shootCD = 70;
             }
         }
     }
 
-    void updatePickups() {
-        Iterator<Coin> ci = coins.iterator();
-        while (ci.hasNext()) {
-            Coin c = ci.next();
+    void updateCoins() {
+        coins.removeIf(c -> {
             if (dist(player.x, player.y, c.x, c.y) < 22) {
-                score += 50; ci.remove();
+                score += 50;
                 spawnParticles((int)c.x, (int)c.y, NEON_YELLOW, 8);
+                return true;
             }
-        }
+            return false;
+        });
     }
 
-    void updateParticles() {
-        particles.removeIf(p -> { p.update(); return p.life <= 0; });
-    }
-
-    void updateExplosions() {
-        explosions.removeIf(ex -> { ex.update(); return ex.done(); });
-    }
+    void updateParticles()  { particles.removeIf(p  -> { p.update();  return p.life <= 0; }); }
+    void updateExplosions() { explosions.removeIf(ex -> { ex.update(); return ex.done();   }); }
 
     void updateCamera() {
-        camX = (int)(player.x - W / 2);
-        camY = (int)(player.y - H / 2);
-        camX = Math.max(0, Math.min(camX, MAP_W - W));
-        camY = Math.max(0, Math.min(camY, MAP_H - H));
+        camX = Math.max(0, Math.min((int)player.x - W/2, MAP_W - W));
+        camY = Math.max(0, Math.min((int)player.y - H/2, MAP_H - H));
     }
 
-    void explodeCar(Car c) {
+    void explodeCar(CarObj c) {
         explosions.add(new Explosion((int)c.x, (int)c.y));
         spawnParticles((int)c.x, (int)c.y, NEON_ORANGE, 20);
         if (player.inCar && player.currentCar == c) { player.inCar = false; player.currentCar = null; }
     }
 
-    void raiseWanted(int amount) {
-        wantedLevel = Math.min(5, wantedLevel + amount);
-        wantedCooldown = 600;
-    }
+    void raiseWanted(int n) { wantedLevel = Math.min(5, wantedLevel + n); wantedCooldown = 600; }
 
-    void spawnParticles(int x, int y, Color color, int count) {
-        for (int i = 0; i < count; i++) particles.add(new Particle(x, y, color));
+    void spawnParticles(int x, int y, Color col, int n) {
+        for (int i = 0; i < n; i++) particles.add(new Particle(x, y, col));
     }
 
     double dist(double x1, double y1, double x2, double y2) {
-        double dx = x1 - x2, dy = y1 - y2;
-        return Math.sqrt(dx*dx + dy*dy);
+        return Math.hypot(x1-x2, y1-y2);
     }
 
     // ── RENDER ─────────────────────────────────────────
+    void render() {
+        bufG.setColor(Color.BLACK);
+        bufG.fillRect(0, 0, W, H);
+        switch (state) {
+            case SPLASH   -> drawSplash(bufG);
+            case PLAYING  -> { drawWorld(bufG); drawHUD(bufG); }
+            case PAUSED   -> { drawWorld(bufG); drawHUD(bufG); drawOverlay(bufG, "PAUSED", NEON_PINK, "Press P to Resume"); }
+            case GAMEOVER -> drawEndScreen(bufG, "WASTED", BLOOD_RED, new Color(255,60,60));
+            case WIN      -> drawEndScreen(bufG, "MISSION COMPLETE!", NEON_YELLOW, NEON_CYAN);
+        }
+    }
+
     @Override
     protected void paintComponent(Graphics g) {
         super.paintComponent(g);
-        Graphics2D g2 = (Graphics2D)g;
-        g2.setRenderingHint(RenderingHints.KEY_ANTIALIASING, RenderingHints.VALUE_ANTIALIAS_ON);
-
-        switch (state) {
-            case SPLASH   -> drawSplash(g2);
-            case PLAYING  -> drawGame(g2);
-            case PAUSED   -> { drawGame(g2); drawPause(g2); }
-            case GAMEOVER -> drawGameOver(g2);
-            case WIN      -> drawWin(g2);
-        }
+        if (buffer != null) g.drawImage(buffer, 0, 0, null);
     }
 
+    // ── SPLASH SCREEN ──────────────────────────────────
     void drawSplash(Graphics2D g) {
-        // Background
-        GradientPaint bg = new GradientPaint(0,0, new Color(5,0,15), W,H, new Color(15,0,40));
+        // Background gradient
+        GradientPaint bg = new GradientPaint(0,0,new Color(5,0,20), W,H,new Color(20,0,50));
         g.setPaint(bg); g.fillRect(0,0,W,H);
 
         // Scanlines
-        g.setColor(new Color(0,0,0,40));
-        for (int y = 0; y < H; y += 3) g.drawLine(0,y,W,y);
+        g.setColor(new Color(0,0,0,50));
+        for (int y=0; y<H; y+=3) g.drawLine(0,y,W,y);
 
         // City silhouette
-        drawCitySilhouette(g);
+        drawSilhouette(g);
 
         // Animated neon grid
-        g.setColor(new Color(0,255,200,20));
-        for (int x = 0; x < W; x+=40) g.drawLine(x,H/2,x,H);
-        for (int y = H/2; y < H; y+=40) g.drawLine(0,y,W,y);
+        g.setColor(new Color(0,255,200,15));
+        for (int x=0; x<W; x+=40) g.drawLine(x,H/2,x,H);
+        for (int y=H/2; y<H; y+=40) g.drawLine(0,y,W,y);
 
-        // Title glow
-        long elapsed = System.currentTimeMillis() - splashTimer;
-        titleAlpha = Math.min(1f, elapsed / 1500f);
+        long elapsed = System.currentTimeMillis() - splashStart;
+        float alpha = Math.min(1f, elapsed/1500f);
+        int a = (int)(alpha*255);
 
-        // Shadow layers for glow effect
-        for (int glow = 20; glow > 0; glow -= 2) {
-            g.setFont(titleFont);
-            g.setColor(new Color(255,20,147, (int)(titleAlpha * 8)));
-            int tx = W/2 - g.getFontMetrics().stringWidth("GTA VII")/2;
-            g.drawString("GTA VII", tx + glow/2, 200 + glow/2);
+        // Title glow layers
+        g.setFont(new Font("Impact", Font.BOLD, 74));
+        FontMetrics fm = g.getFontMetrics();
+        int tx = W/2 - fm.stringWidth("GTA VII")/2;
+        for (int glow=18; glow>0; glow-=3) {
+            g.setColor(new Color(255,20,147, Math.max(0,(int)(alpha*12))));
+            g.drawString("GTA VII", tx+glow/3, 210+glow/3);
         }
-        g.setFont(titleFont);
-        g.setColor(new Color(255,20,147, (int)(titleAlpha*255)));
-        int tx = W/2 - g.getFontMetrics().stringWidth("GTA VII")/2;
-        g.drawString("GTA VII", tx, 200);
+        g.setColor(new Color(255,20,147,a));
+        g.drawString("GTA VII", tx, 210);
 
         // Subtitle
-        g.setFont(new Font("Impact", Font.BOLD, 28));
+        g.setFont(new Font("Impact", Font.BOLD, 30));
         String sub = "VICE CITY REBORN";
-        g.setColor(new Color(0,255,220, (int)(titleAlpha*200)));
-        g.drawString(sub, W/2 - g.getFontMetrics().stringWidth(sub)/2, 245);
+        g.setColor(new Color(0,255,220, a));
+        g.drawString(sub, W/2 - g.getFontMetrics().stringWidth(sub)/2, 252);
 
-        // Developer watermark
-        g.setFont(new Font("Courier New", Font.BOLD, 18));
+        // Developer credit - bsmatek
+        g.setFont(new Font("Courier New", Font.BOLD, 19));
         String dev = "DEVELOPED BY  SAHI AHMED YASSIN";
-        g.setColor(new Color(255,220,0, (int)(titleAlpha*255)));
-        g.drawString(dev, W/2 - g.getFontMetrics().stringWidth(dev)/2, 290);
+        g.setColor(new Color(255,220,0,a));
+        g.drawString(dev, W/2 - g.getFontMetrics().stringWidth(dev)/2, 295);
 
-        // Press start
-        if (elapsed > 1000 && (elapsed/500) % 2 == 0) {
-            g.setFont(uiFont);
-            String ps = "[ PRESS ENTER TO START ]";
+        // Blink press enter
+        if (elapsed > 1200 && (elapsed/500)%2==0) {
+            g.setFont(new Font("Courier New", Font.BOLD, 16));
+            String ps = "[ PRESS  ENTER  TO  START ]";
             g.setColor(NEON_CYAN);
-            g.drawString(ps, W/2 - g.getFontMetrics().stringWidth(ps)/2, 380);
+            g.drawString(ps, W/2 - g.getFontMetrics().stringWidth(ps)/2, 370);
         }
 
         // Controls
-        g.setFont(pixelFont);
-        g.setColor(new Color(200,200,200,180));
-        String[] controls = {
-            "WASD / ARROWS  - Move",
-            "E              - Enter / Exit Car",
-            "SPACE / F      - Shoot",
-            "P              - Pause",
-            "SHIFT          - Sprint / Boost"
+        g.setFont(new Font("Courier New", Font.PLAIN, 13));
+        g.setColor(new Color(180,180,200,200));
+        String[] ctrl = {
+            "WASD / Arrows  -  Move",
+            "E              -  Enter / Exit Car",
+            "SPACE / F      -  Shoot",
+            "SHIFT          -  Sprint / Boost",
+            "P              -  Pause"
         };
-        int cy2 = 430;
-        for (String ctrl : controls) {
-            g.drawString(ctrl, W/2 - 130, cy2);
-            cy2 += 22;
+        int cy = 415;
+        for (String s : ctrl) {
+            g.drawString(s, W/2-130, cy); cy+=22;
         }
 
-        // Corner logo
-        drawCornerLogo(g);
+        // Corner watermark
+        drawWatermark(g);
     }
 
-    void drawCitySilhouette(Graphics2D g) {
-        g.setColor(new Color(20,5,35));
-        int[] xp = {0,0,60,60,80,80,110,110,130,130,160,160,200,200,240,240,280,280,
-                    320,320,370,370,420,420,460,460,500,500,550,550,600,600,650,650,
-                    700,700,750,750,800,800,850,850,900,900,900};
-        int[] yp = {H,380,380,320,320,280,280,250,250,310,310,260,260,300,300,220,220,
-                    270,270,200,200,240,240,350,350,280,280,230,230,260,260,300,300,
-                    240,240,280,280,310,310,270,270,350,350,H};
-        g.fillPolygon(xp, yp, xp.length);
+    void drawSilhouette(Graphics2D g) {
+        g.setColor(new Color(15,5,30));
+        int[] xs = {0,0,60,60,90,90,120,120,150,150,190,190,240,240,280,280,330,330,
+                    380,380,430,430,480,480,530,530,580,580,640,640,700,700,760,760,
+                    810,810,860,860,900,900};
+        int[] ys = {H,370,370,310,310,270,270,240,240,300,300,260,260,305,305,220,220,
+                    270,270,200,200,250,250,345,345,280,280,230,230,265,265,295,295,
+                    240,240,280,280,350,350,H};
+        g.fillPolygon(xs,ys,xs.length);
     }
 
-    void drawCornerLogo(Graphics2D g) {
+    void drawWatermark(Graphics2D g) {
         g.setFont(new Font("Courier New", Font.BOLD, 11));
-        g.setColor(new Color(255,20,147,180));
+        g.setColor(new Color(255,20,147,160));
         g.drawString("SAY", W-55, H-28);
-        g.setColor(new Color(0,255,220,180));
+        g.setColor(new Color(0,255,220,160));
         g.drawString("GAMES", W-65, H-14);
     }
 
-    void drawGame(Graphics2D g) {
-        // World
-        g.translate(-camX, -camY);
-        drawWorld(g);
-        g.translate(camX, camY);
-        // HUD
-        drawHUD(g);
-    }
-
+    // ── WORLD ──────────────────────────────────────────
     void drawWorld(Graphics2D g) {
-        // Base - grass
-        g.setColor(GRASS);
-        g.fillRect(0, 0, MAP_W, MAP_H);
+        g.translate(-camX, -camY);
 
-        // Roads (grid)
+        // Grass base
+        g.setColor(GRASS_COL);
+        g.fillRect(0,0,MAP_W,MAP_H);
+
+        // Roads
         g.setColor(ROAD_DARK);
-        for (int x = 0; x < MAP_W; x += 300) g.fillRect(x, 0, 80, MAP_H);
-        for (int y = 0; y < MAP_H; y += 300) g.fillRect(0, y, MAP_W, 80);
+        for (int x=0; x<MAP_W; x+=300) g.fillRect(x,0,80,MAP_H);
+        for (int y=0; y<MAP_H; y+=300) g.fillRect(0,y,MAP_W,80);
 
         // Road markings
+        float[] dash = {20f,20f};
         g.setColor(ROAD_LINE);
-        g.setStroke(new BasicStroke(2, BasicStroke.CAP_BUTT, BasicStroke.JOIN_MITER, 1, new float[]{20,20}, frame*2));
-        for (int x = 0; x < MAP_W; x += 300) g.drawLine(x+40, 0, x+40, MAP_H);
-        for (int y = 0; y < MAP_H; y += 300) g.drawLine(0, y+40, MAP_W, y+40);
+        g.setStroke(new BasicStroke(2,BasicStroke.CAP_BUTT,BasicStroke.JOIN_MITER,1,dash,frame*2f));
+        for (int x=0; x<MAP_W; x+=300) g.drawLine(x+40,0,x+40,MAP_H);
+        for (int y=0; y<MAP_H; y+=300) g.drawLine(0,y+40,MAP_W,y+40);
         g.setStroke(new BasicStroke(1));
 
         // Sidewalks
         g.setColor(SIDEWALK);
-        for (int x = 0; x < MAP_W; x += 300) { g.fillRect(x-8, 0, 8, MAP_H); g.fillRect(x+80, 0, 8, MAP_H); }
-        for (int y = 0; y < MAP_H; y += 300) { g.fillRect(0, y-8, MAP_W, 8); g.fillRect(0, y+80, MAP_W, 8); }
+        for (int x=0; x<MAP_W; x+=300) { g.fillRect(x-8,0,8,MAP_H); g.fillRect(x+80,0,8,MAP_H); }
+        for (int y=0; y<MAP_H; y+=300) { g.fillRect(0,y-8,MAP_W,8); g.fillRect(0,y+80,MAP_W,8); }
 
-        // Buildings
-        for (Building b : buildings) b.draw(g, frame);
-
-        // Coins
-        for (Coin c : coins) c.draw(g, frame);
-
-        // Cars
-        for (Car c : cars) c.draw(g, frame);
-
-        // Cops
-        for (Cop c : cops) c.draw(g);
-
-        // Particles
-        for (Particle p : particles) p.draw(g);
-
-        // Explosions
-        for (Explosion ex : explosions) ex.draw(g);
-
-        // Player
+        for (Building b  : buildings)  b.draw(g, frame);
+        for (Coin c      : coins)       c.draw(g, frame);
+        for (CarObj c    : cars)        c.draw(g, frame);
+        for (Cop cop     : cops)        cop.draw(g, frame);
+        for (Bullet b    : bullets)     b.draw(g);
+        for (Particle p  : particles)   p.draw(g);
+        for (Explosion ex: explosions)  ex.draw(g);
         player.draw(g, frame);
 
         // Car enter prompt
-        if (!player.inCar) {
-            for (Car c : cars) {
+        if (!player.inCar)
+            for (CarObj c : cars)
                 if (c.nearPlayer) {
-                    g.setFont(new Font("Courier New", Font.BOLD, 12));
+                    g.setFont(new Font("Courier New", Font.BOLD, 13));
                     g.setColor(NEON_YELLOW);
-                    g.drawString("[E] Enter Car", (int)c.x - 30, (int)c.y - 30);
+                    g.drawString("[E] Enter Car", (int)c.x-30, (int)c.y-32);
                 }
-            }
-        }
+
+        g.translate(camX, camY);
     }
 
+    // ── HUD ────────────────────────────────────────────
     void drawHUD(Graphics2D g) {
-        // Dark HUD panel top
-        g.setColor(new Color(0,0,0,160));
-        g.fillRect(0, 0, W, 55);
+        // Top bar
+        g.setColor(new Color(0,0,0,170));
+        g.fillRect(0,0,W,58);
 
         // Score
-        g.setFont(new Font("Impact", Font.BOLD, 20));
+        g.setFont(new Font("Impact", Font.BOLD, 22));
         g.setColor(NEON_YELLOW);
-        g.drawString("$" + score, 15, 30);
+        g.drawString("$" + score, 15, 32);
 
         // HP bar
-        g.setFont(pixelFont);
-        g.setColor(BLOOD_RED);
-        g.fillRoundRect(15, 36, 120, 12, 6, 6);
-        g.setColor(new Color(0,220,60));
-        g.fillRoundRect(15, 36, (int)(120 * player.hp / 100.0), 12, 6, 6);
-        g.setColor(Color.WHITE);
-        g.drawString("HP", 140, 47);
+        g.setColor(new Color(60,0,0));
+        g.fillRoundRect(15,38,130,12,6,6);
+        g.setColor(player.hp > 40 ? new Color(0,210,60) : BLOOD_RED);
+        g.fillRoundRect(15,38,(int)(130*player.hp/100.0),12,6,6);
+        g.setColor(new Color(200,200,200));
+        g.setFont(new Font("Courier New", Font.BOLD, 11));
+        g.drawString("HP  " + player.hp + "%", 152, 49);
 
         // Wanted stars
-        int sx = W - 180;
-        g.setFont(new Font("Courier New", Font.BOLD, 22));
-        for (int i = 0; i < 5; i++) {
-            g.setColor(i < wantedLevel ? new Color(255,60,60) : new Color(80,80,80));
-            g.drawString("★", sx + i*30, 32);
+        int sx = W-185;
+        g.setFont(new Font("Dialog", Font.BOLD, 20));
+        for (int i=0; i<5; i++) {
+            g.setColor(i < wantedLevel ? new Color(255,60,60) : new Color(70,70,70));
+            g.drawString("★", sx + i*32, 33);
         }
-        g.setFont(pixelFont);
-        g.setColor(new Color(200,200,200));
-        g.drawString("WANTED", sx+8, 47);
+        g.setFont(new Font("Courier New", Font.BOLD, 11));
+        g.setColor(new Color(200,180,180));
+        g.drawString("WANTED", sx+12, 50);
 
-        // Mini-map
-        drawMinimap(g);
+        // Goal progress bar
+        g.setFont(new Font("Courier New", Font.BOLD, 12));
+        g.setColor(new Color(200,200,200,180));
+        g.drawString("GOAL $2000", W/2-42, 18);
+        g.setColor(new Color(40,40,40));
+        g.fillRoundRect(W/2-42,22,85,7,4,4);
+        g.setColor(NEON_CYAN);
+        g.fillRoundRect(W/2-42,22,(int)(85.0*Math.min(score,2000)/2000),7,4,4);
 
-        // Car indicator
+        // In-car indicator
         if (player.inCar) {
             g.setColor(NEON_CYAN);
             g.setFont(new Font("Courier New", Font.BOLD, 13));
-            g.drawString("🚗 IN VEHICLE  [E] Exit", 15, H - 15);
+            g.drawString("[ IN VEHICLE ]  E = Exit", 15, H-12);
         }
 
-        // Dev watermark (subtle)
-        g.setFont(new Font("Courier New", Font.PLAIN, 10));
-        g.setColor(new Color(255,20,147,100));
-        g.drawString("SAHI AHMED YASSIN", W - 140, H - 5);
+        // Minimap
+        drawMinimap(g);
 
-        // Score goal
-        g.setFont(pixelFont);
-        g.setColor(new Color(200,200,200,180));
-        g.drawString("GOAL: $2000", W/2 - 45, 20);
-        g.setColor(NEON_CYAN);
-        g.fillRoundRect(W/2 - 45, 25, (int)(90.0 * score / 2000), 6, 3, 3);
-        g.setColor(new Color(100,100,100));
-        g.drawRoundRect(W/2 - 45, 25, 90, 6, 3, 3);
+        // Subtle dev watermark
+        g.setFont(new Font("Courier New", Font.PLAIN, 10));
+        g.setColor(new Color(255,20,147,90));
+        g.drawString("SAHI AHMED YASSIN", W-142, H-5);
     }
 
     void drawMinimap(Graphics2D g) {
-        int mx = W - 110, my = H - 110, mw = 100, mh = 100;
-        g.setColor(new Color(0,0,0,180));
-        g.fillRoundRect(mx, my, mw, mh, 10, 10);
+        int mx=W-112, my=H-112, mw=102, mh=102;
+        g.setColor(new Color(0,0,0,190));
+        g.fillRoundRect(mx,my,mw,mh,10,10);
         g.setColor(NEON_PINK);
-        g.drawRoundRect(mx, my, mw, mh, 10, 10);
-
-        float sx = (float)mw / MAP_W, sy = (float)mh / MAP_H;
-        // Buildings
-        g.setColor(new Color(80,60,100));
+        g.drawRoundRect(mx,my,mw,mh,10,10);
+        float sx=(float)mw/MAP_W, sy=(float)mh/MAP_H;
+        g.setColor(new Color(70,50,90));
         for (Building b : buildings)
-            g.fillRect(mx + (int)(b.x*sx), my + (int)(b.y*sy), Math.max(1,(int)(b.w*sx)), Math.max(1,(int)(b.h*sy)));
-        // Cops
-        g.setColor(new Color(50,100,255));
-        for (Cop c : cops) g.fillOval(mx+(int)(c.x*sx)-2, my+(int)(c.y*sy)-2, 4, 4);
-        // Coins
+            g.fillRect(mx+(int)(b.x*sx), my+(int)(b.y*sy), Math.max(2,(int)(b.w*sx)), Math.max(2,(int)(b.h*sy)));
+        g.setColor(new Color(60,100,255));
+        for (Cop c : cops)  g.fillOval(mx+(int)(c.x*sx)-2, my+(int)(c.y*sy)-2,5,5);
         g.setColor(NEON_YELLOW);
-        for (Coin c : coins) g.fillRect(mx+(int)(c.x*sx), my+(int)(c.y*sy), 2, 2);
-        // Player
+        for (Coin c : coins) g.fillRect(mx+(int)(c.x*sx), my+(int)(c.y*sy),2,2);
         g.setColor(NEON_CYAN);
-        g.fillOval(mx+(int)(player.x*sx)-3, my+(int)(player.y*sy)-3, 6, 6);
+        g.fillOval(mx+(int)(player.x*sx)-4, my+(int)(player.y*sy)-4,8,8);
     }
 
-    void drawPause(Graphics2D g) {
+    void drawOverlay(Graphics2D g, String title, Color tc, String sub) {
         g.setColor(new Color(0,0,0,160));
         g.fillRect(0,0,W,H);
-        g.setFont(new Font("Impact", Font.BOLD, 56));
-        g.setColor(NEON_PINK);
-        String t = "PAUSED";
-        g.drawString(t, W/2 - g.getFontMetrics().stringWidth(t)/2, H/2);
-        g.setFont(uiFont);
-        g.setColor(NEON_CYAN);
-        String r = "Press P to Resume";
-        g.drawString(r, W/2 - g.getFontMetrics().stringWidth(r)/2, H/2 + 50);
-    }
-
-    void drawGameOver(Graphics2D g) {
-        g.setColor(new Color(10,0,0));
-        g.fillRect(0,0,W,H);
-        drawCitySilhouette(g);
-        g.setFont(new Font("Impact", Font.BOLD, 72));
-        g.setColor(BLOOD_RED);
-        String t = "WASTED";
-        int tx = W/2 - g.getFontMetrics().stringWidth(t)/2;
-        g.drawString(t, tx+3, H/2+3);
-        g.setColor(new Color(255,60,60));
-        g.drawString(t, tx, H/2);
-        g.setFont(uiFont);
-        g.setColor(NEON_YELLOW);
-        g.drawString("Score: $" + score, W/2 - 50, H/2 + 60);
-        g.setColor(new Color(200,200,200));
-        g.setFont(pixelFont);
-        String r = "Press ENTER to Try Again";
-        g.drawString(r, W/2 - g.getFontMetrics().stringWidth(r)/2, H/2+100);
-        drawCornerLogo(g);
-    }
-
-    void drawWin(Graphics2D g) {
-        GradientPaint bg = new GradientPaint(0,0,new Color(0,10,30),W,H,new Color(10,0,30));
-        g.setPaint(bg); g.fillRect(0,0,W,H);
-        // Flash effect
-        g.setColor(new Color(255,220,0, (int)(80 + 60*Math.sin(frame*0.1))));
-        g.fillRect(0,0,W,H);
         g.setFont(new Font("Impact", Font.BOLD, 60));
-        g.setColor(NEON_YELLOW);
-        String t = "MISSION COMPLETE!";
-        g.drawString(t, W/2 - g.getFontMetrics().stringWidth(t)/2, H/2 - 40);
-        g.setFont(new Font("Impact", Font.BOLD, 28));
+        g.setColor(tc);
+        int tx = W/2 - g.getFontMetrics().stringWidth(title)/2;
+        g.drawString(title, tx, H/2);
+        g.setFont(new Font("Courier New", Font.BOLD, 18));
         g.setColor(NEON_CYAN);
-        String s = "Final Score: $" + score;
-        g.drawString(s, W/2 - g.getFontMetrics().stringWidth(s)/2, H/2 + 20);
-        g.setFont(uiFont);
-        g.setColor(NEON_PINK);
-        String dev = "SAHI AHMED YASSIN";
-        g.drawString(dev, W/2 - g.getFontMetrics().stringWidth(dev)/2, H/2+70);
-        g.setFont(pixelFont);
+        g.drawString(sub, W/2 - g.getFontMetrics().stringWidth(sub)/2, H/2+50);
+    }
+
+    void drawEndScreen(Graphics2D g, String title, Color c1, Color c2) {
+        GradientPaint bg = new GradientPaint(0,0,new Color(5,0,15),W,H,new Color(20,0,40));
+        g.setPaint(bg); g.fillRect(0,0,W,H);
+        drawSilhouette(g);
+        g.setFont(new Font("Impact", Font.BOLD, 68));
+        // Shadow
+        g.setColor(new Color(0,0,0,180));
+        g.drawString(title, W/2 - g.getFontMetrics().stringWidth(title)/2+4, H/2+4);
+        g.setColor(c1);
+        g.drawString(title, W/2 - g.getFontMetrics().stringWidth(title)/2, H/2);
+        g.setFont(new Font("Impact", Font.BOLD, 26));
+        g.setColor(c2);
+        String sc = "Score: $" + score;
+        g.drawString(sc, W/2 - g.getFontMetrics().stringWidth(sc)/2, H/2+55);
+        g.setFont(new Font("Courier New", Font.BOLD, 15));
         g.setColor(new Color(200,200,200));
-        String r = "Press ENTER to Play Again";
-        g.drawString(r, W/2 - g.getFontMetrics().stringWidth(r)/2, H/2+110);
-        drawCornerLogo(g);
+        String re = "Press ENTER to Play Again";
+        g.drawString(re, W/2 - g.getFontMetrics().stringWidth(re)/2, H/2+100);
+        g.setFont(new Font("Courier New", Font.BOLD, 14));
+        g.setColor(NEON_PINK);
+        String dev = "BY SAHI AHMED YASSIN";
+        g.drawString(dev, W/2 - g.getFontMetrics().stringWidth(dev)/2, H/2+130);
+        drawWatermark(g);
     }
 
     // ── INPUT ──────────────────────────────────────────
     @Override public void keyPressed(KeyEvent e) {
-        int kc = e.getKeyCode();
-        if (kc < 256) keys[kc] = true;
-
-        if (state == State.SPLASH && kc == KeyEvent.VK_ENTER) { state = State.PLAYING; return; }
-        if ((state == State.GAMEOVER || state == State.WIN) && kc == KeyEvent.VK_ENTER) { initWorld(); state = State.PLAYING; return; }
+        int k = e.getKeyCode();
+        if (k >= 0 && k < 256) keys[k] = true;
+        if (state == State.SPLASH && k == KeyEvent.VK_ENTER) { state = State.PLAYING; return; }
+        if ((state == State.GAMEOVER || state == State.WIN) && k == KeyEvent.VK_ENTER) { initWorld(); state = State.PLAYING; return; }
         if (state == State.PLAYING) {
-            if (kc == KeyEvent.VK_P) state = State.PAUSED;
-            if (kc == KeyEvent.VK_E) toggleCar();
-            if (kc == KeyEvent.VK_SPACE || kc == KeyEvent.VK_F) shoot();
-        } else if (state == State.PAUSED && kc == KeyEvent.VK_P) {
+            if (k == KeyEvent.VK_P) state = State.PAUSED;
+            if (k == KeyEvent.VK_E) toggleCar();
+            if (k == KeyEvent.VK_SPACE || k == KeyEvent.VK_F) shoot();
+        } else if (state == State.PAUSED && k == KeyEvent.VK_P) {
             state = State.PLAYING;
         }
     }
-
-    @Override public void keyReleased(KeyEvent e) { if (e.getKeyCode() < 256) keys[e.getKeyCode()] = false; }
+    @Override public void keyReleased(KeyEvent e) { int k=e.getKeyCode(); if(k>=0&&k<256) keys[k]=false; }
     @Override public void keyTyped(KeyEvent e) {}
 
     void toggleCar() {
         if (player.inCar) {
-            player.inCar = false;
-            player.x = player.currentCar.x + 40;
+            player.x = player.currentCar.x + 42;
             player.y = player.currentCar.y;
-            player.currentCar = null;
+            player.inCar = false; player.currentCar = null;
         } else {
-            for (Car c : cars) {
+            for (CarObj c : cars) {
                 if (dist(player.x, player.y, c.x, c.y) < 45) {
-                    player.inCar = true;
-                    player.currentCar = c;
-                    raiseWanted(1);
-                    break;
+                    player.inCar = true; player.currentCar = c;
+                    raiseWanted(1); break;
                 }
             }
         }
     }
 
     void shoot() {
-        double[] dirAngles = {-Math.PI/2, 0, Math.PI/2, Math.PI};
-        double angle = dirAngles[player.dir];
-        bullets.add(new Bullet((int)player.x, (int)player.y, angle, true));
+        double[] angles = {-Math.PI/2, 0, Math.PI/2, Math.PI};
+        bullets.add(new Bullet((int)player.x,(int)player.y, angles[player.dir], true));
+        spawnParticles((int)player.x,(int)player.y, NEON_ORANGE, 3);
         if (wantedLevel == 0) raiseWanted(1);
-        spawnParticles((int)player.x, (int)player.y, NEON_ORANGE, 3);
     }
 }
 
@@ -672,118 +578,111 @@ class GamePanel extends JPanel implements KeyListener, ActionListener {
 // ══════════════════════════════════════════════════════
 class Player {
     double x, y, vx, vy;
-    int hp = 100, dir = 2;
-    boolean inCar = false;
-    Car currentCar;
+    int hp=100, dir=2;
+    boolean inCar=false;
+    CarObj currentCar;
 
-    Player(int x, int y) { this.x = x; this.y = y; }
+    Player(int x, int y) { this.x=x; this.y=y; }
 
     void update(int mw, int mh) {
         if (inCar && currentCar != null) {
-            currentCar.vx = vx * 1.8;
-            currentCar.vy = vy * 1.8;
+            currentCar.vx = vx * 1.9;
+            currentCar.vy = vy * 1.9;
             currentCar.x += currentCar.vx;
             currentCar.y += currentCar.vy;
             currentCar.x = Math.max(20, Math.min(mw-20, currentCar.x));
             currentCar.y = Math.max(20, Math.min(mh-20, currentCar.y));
-            x = currentCar.x;
-            y = currentCar.y;
+            x = currentCar.x; y = currentCar.y;
         } else {
-            x += vx; y += vy;
-            x = Math.max(10, Math.min(mw-10, x));
-            y = Math.max(10, Math.min(mh-10, y));
+            x = Math.max(10, Math.min(mw-10, x+vx));
+            y = Math.max(10, Math.min(mh-10, y+vy));
         }
     }
 
     void draw(Graphics2D g, int frame) {
-        if (inCar) return; // car draws player
-        int px = (int)x, py = (int)y;
+        if (inCar) return;
+        int px=(int)x, py=(int)y;
         // Shadow
-        g.setColor(new Color(0,0,0,80));
+        g.setColor(new Color(0,0,0,90));
         g.fillOval(px-10, py+10, 20, 8);
         // Body
-        g.setColor(new Color(0,200,255));
-        g.fillRoundRect(px-8, py-12, 16, 22, 4, 4);
+        g.setColor(new Color(0,190,255));
+        g.fillRoundRect(px-8, py-12, 16, 22, 5, 5);
         // Head
         g.setColor(new Color(255,200,140));
         g.fillOval(px-7, py-22, 14, 14);
         // Legs
-        int legOff = (int)(Math.sin(frame*0.3)*3);
-        g.setColor(new Color(30,30,80));
-        g.fillRect(px-6, py+10, 5, 8 + legOff);
-        g.fillRect(px+1, py+10, 5, 8 - legOff);
-        // Neon outline
+        int lOff = (int)(Math.sin(frame*0.3)*3);
+        g.setColor(new Color(20,20,80));
+        g.fillRect(px-6, py+10, 5, 8+lOff);
+        g.fillRect(px+1,  py+10, 5, 8-lOff);
+        // Outline glow
         g.setColor(GamePanel.NEON_CYAN);
-        g.drawRoundRect(px-8, py-12, 16, 22, 4, 4);
-        // Direction indicator
-        int[] dx = {0,1,0,-1}, dy = {-1,0,1,0};
+        g.drawRoundRect(px-8, py-12, 16, 22, 5, 5);
+        // Direction dot
+        int[] ddx={0,1,0,-1}, ddy={-1,0,1,0};
         g.setColor(GamePanel.NEON_YELLOW);
-        g.fillOval(px + dx[dir]*10-3, py + dy[dir]*10-3, 6, 6);
+        g.fillOval(px+ddx[dir]*11-3, py+ddy[dir]*11-3, 6, 6);
     }
 }
 
 // ══════════════════════════════════════════════════════
 // CAR
 // ══════════════════════════════════════════════════════
-class Car {
+class CarObj {
     double x, y, vx, vy;
     Color color;
-    int dir, hp = 100;
-    boolean nearPlayer = false;
-    Player occupant = null;
+    int dir, hp=100;
+    boolean nearPlayer=false;
     static final int[][] DIRS = {{0,-2},{2,0},{0,2},{-2,0}};
 
-    Car(int x, int y, Color color, int dir) {
-        this.x = x; this.y = y; this.color = color; this.dir = dir;
-        vx = DIRS[dir][0]; vy = DIRS[dir][1];
+    CarObj(int x, int y, Color col, int dir) {
+        this.x=x; this.y=y; this.color=col; this.dir=dir;
+        vx=DIRS[dir][0]; vy=DIRS[dir][1];
     }
 
     void update(int mw, int mh) {
-        x += vx; y += vy;
-        if (x < 30 || x > mw-30) { vx = -vx; dir = (dir+2)%4; }
-        if (y < 30 || y > mh-30) { vy = -vy; dir = (dir+2)%4; }
-        x = Math.max(30, Math.min(mw-30, x));
-        y = Math.max(30, Math.min(mh-30, y));
+        x+=vx; y+=vy;
+        if (x<30||x>mw-30) { vx=-vx; dir=(dir+2)%4; }
+        if (y<30||y>mh-30) { vy=-vy; dir=(dir+2)%4; }
+        x=Math.max(30,Math.min(mw-30,x));
+        y=Math.max(30,Math.min(mh-30,y));
     }
 
     void draw(Graphics2D g, int frame) {
-        int cx = (int)x, cy = (int)y;
+        int cx=(int)x, cy=(int)y;
         // Shadow
         g.setColor(new Color(0,0,0,100));
-        g.fillRoundRect(cx-18, cy-10+8, 36, 20, 5, 5);
-        // Car body
+        g.fillRoundRect(cx-18, cy-10+9, 36, 20, 6, 6);
+        // Body
         g.setColor(color);
-        g.fillRoundRect(cx-18, cy-10, 36, 20, 6, 6);
+        g.fillRoundRect(cx-18, cy-10, 36, 20, 7, 7);
         // Roof
-        Color roofColor = color.darker();
-        g.setColor(roofColor);
-        g.fillRoundRect(cx-12, cy-8, 24, 16, 4, 4);
+        g.setColor(color.darker());
+        g.fillRoundRect(cx-11, cy-8, 22, 16, 4, 4);
         // Windows
-        g.setColor(new Color(150,220,255,180));
-        g.fillRoundRect(cx-10, cy-7, 20, 14, 3, 3);
+        g.setColor(new Color(160,220,255,170));
+        g.fillRoundRect(cx-9, cy-7, 18, 14, 3, 3);
         // Headlights
         g.setColor(new Color(255,255,200));
-        g.fillOval(cx+14, cy-5, 6, 5);
-        g.fillOval(cx+14, cy+1, 6, 5);
+        g.fillOval(cx+14, cy-5, 6, 5); g.fillOval(cx+14, cy+1, 6, 5);
         // Taillights
         g.setColor(new Color(255,0,0));
-        g.fillOval(cx-20, cy-5, 5, 5);
-        g.fillOval(cx-20, cy+1, 5, 5);
+        g.fillOval(cx-20, cy-5, 5, 5); g.fillOval(cx-20, cy+1, 5, 5);
         // Wheels
-        g.setColor(new Color(30,30,30));
-        g.fillOval(cx-16, cy-14, 8, 8); g.fillOval(cx+8, cy-14, 8, 8);
-        g.fillOval(cx-16, cy+6, 8, 8);  g.fillOval(cx+8, cy+6, 8, 8);
-        // Neon underglow
-        g.setColor(new Color(color.getRed(), color.getGreen(), color.getBlue(), 60));
+        g.setColor(new Color(25,25,25));
+        g.fillOval(cx-16,cy-14,8,8); g.fillOval(cx+8,cy-14,8,8);
+        g.fillOval(cx-16,cy+6, 8,8); g.fillOval(cx+8,cy+6, 8,8);
+        // Neon underglow pulse
+        int pulse = 50+(int)(30*Math.sin(frame*0.08+x*0.01));
+        g.setColor(new Color(color.getRed(),color.getGreen(),color.getBlue(),pulse));
         g.setStroke(new BasicStroke(3));
-        g.drawRoundRect(cx-20, cy-12, 40, 24, 8, 8);
+        g.drawRoundRect(cx-20,cy-12,40,24,9,9);
         g.setStroke(new BasicStroke(1));
         // HP bar if damaged
-        if (hp < 100) {
-            g.setColor(new Color(200,0,0));
-            g.fillRect(cx-18, cy-20, 36, 4);
-            g.setColor(new Color(0,200,0));
-            g.fillRect(cx-18, cy-20, (int)(36.0*hp/100), 4);
+        if (hp<100) {
+            g.setColor(new Color(180,0,0)); g.fillRect(cx-18,cy-22,36,4);
+            g.setColor(new Color(0,200,0)); g.fillRect(cx-18,cy-22,(int)(36.0*hp/100),4);
         }
     }
 }
@@ -792,53 +691,47 @@ class Car {
 // BUILDING
 // ══════════════════════════════════════════════════════
 class Building {
-    int x, y, w, h;
+    int x,y,w,h, neonType;
     Color color, neonColor;
-    int neonType;
 
-    Building(int x, int y, int w, int h, Color c, Color nc) {
-        this.x=x; this.y=y; this.w=w; this.h=h; color=c; neonColor=nc;
-        neonType = (int)(Math.random()*3);
+    Building(int x,int y,int w,int h,Color c,Color nc) {
+        this.x=x;this.y=y;this.w=w;this.h=h;color=c;neonColor=nc;
+        neonType=(int)(Math.random()*3);
     }
 
     void draw(Graphics2D g, int frame) {
         // Shadow
-        g.setColor(new Color(0,0,0,80));
-        g.fillRect(x+6, y+6, w, h);
-        // Main body
+        g.setColor(new Color(0,0,0,90));
+        g.fillRect(x+6,y+6,w,h);
+        // Body
         g.setColor(color);
-        g.fillRect(x, y, w, h);
-        // Gradient overlay
-        GradientPaint shine = new GradientPaint(x,y,new Color(255,255,255,30),x+w,y+h,new Color(0,0,0,0));
-        g.setPaint(shine);
         g.fillRect(x,y,w,h);
-        g.setPaint(null);
-        // Windows grid
-        g.setColor(new Color(200,230,255,80));
-        for (int wx = x+6; wx < x+w-10; wx+=12) {
-            for (int wy = y+6; wy < y+h-10; wy+=14) {
-                boolean lit = ((wx+wy+frame/30) % 7 != 0);
-                g.setColor(lit ? new Color(255,240,180,120) : new Color(50,60,80,80));
-                g.fillRect(wx, wy, 8, 10);
+        // Shine
+        g.setPaint(new GradientPaint(x,y,new Color(255,255,255,25),x+w,y+h,new Color(0,0,0,0)));
+        g.fillRect(x,y,w,h); g.setPaint(null);
+        // Windows
+        for (int wx=x+6; wx<x+w-10; wx+=12) {
+            for (int wy=y+6; wy<y+h-10; wy+=14) {
+                boolean lit = ((wx*3+wy+frame/30)%7 != 0);
+                g.setColor(lit ? new Color(255,240,180,110) : new Color(40,50,70,80));
+                g.fillRect(wx,wy,8,10);
             }
         }
-        // Neon sign
-        int pulse = (int)(180 + 75*Math.sin(frame*0.05 + x));
-        g.setColor(new Color(neonColor.getRed(), neonColor.getGreen(), neonColor.getBlue(), pulse));
-        g.setStroke(new BasicStroke(3, BasicStroke.CAP_ROUND, BasicStroke.JOIN_ROUND));
+        // Neon
+        int pulse = 160+(int)(90*Math.sin(frame*0.05+x*0.005));
+        g.setColor(new Color(neonColor.getRed(),neonColor.getGreen(),neonColor.getBlue(),pulse));
+        g.setStroke(new BasicStroke(3,BasicStroke.CAP_ROUND,BasicStroke.JOIN_ROUND));
         switch(neonType) {
-            case 0 -> g.drawRect(x+4, y+4, w-8, h-8);
+            case 0 -> g.drawRect(x+4,y+4,w-8,h-8);
             case 1 -> { g.drawLine(x+10,y+10,x+w-10,y+10); g.drawLine(x+10,y+h-10,x+w-10,y+h-10); }
             case 2 -> g.drawOval(x+10,y+10,w-20,h-20);
         }
         g.setStroke(new BasicStroke(1));
-        // Outline
-        g.setColor(neonColor.darker().darker());
-        g.drawRect(x,y,w,h);
-        // Rooftop details
-        g.setColor(new Color(neonColor.getRed(),neonColor.getGreen(),neonColor.getBlue(),150));
-        g.fillRect(x+w/2-2, y-8, 4, 10);
-        g.fillOval(x+w/2-4, y-12, 8, 8);
+        g.setColor(neonColor.darker().darker()); g.drawRect(x,y,w,h);
+        // Rooftop antenna
+        g.setColor(new Color(neonColor.getRed(),neonColor.getGreen(),neonColor.getBlue(),140));
+        g.fillRect(x+w/2-2,y-8,4,10);
+        g.fillOval(x+w/2-4,y-13,8,8);
     }
 }
 
@@ -846,21 +739,16 @@ class Building {
 // COIN
 // ══════════════════════════════════════════════════════
 class Coin {
-    double x, y;
-    Coin(int x, int y) { this.x=x; this.y=y; }
+    double x,y;
+    Coin(int x,int y){this.x=x;this.y=y;}
     void draw(Graphics2D g, int frame) {
-        int pulse = (int)(180+75*Math.sin(frame*0.1+x));
-        // Glow
-        g.setColor(new Color(255,220,0,60));
-        g.fillOval((int)x-12,(int)y-12,24,24);
-        // Coin
-        g.setColor(new Color(255,220,0,pulse));
-        g.fillOval((int)x-7,(int)y-7,14,14);
-        g.setColor(new Color(255,255,150));
-        g.drawOval((int)x-7,(int)y-7,14,14);
-        g.setFont(new Font("Courier New", Font.BOLD, 9));
-        g.setColor(new Color(180,140,0));
-        g.drawString("$", (int)x-3, (int)y+4);
+        int pulse=(int)(180+70*Math.sin(frame*0.1+x*0.01));
+        g.setColor(new Color(255,220,0,50)); g.fillOval((int)x-12,(int)y-12,24,24);
+        g.setColor(new Color(255,220,0,pulse)); g.fillOval((int)x-7,(int)y-7,14,14);
+        g.setColor(new Color(255,255,150)); g.drawOval((int)x-7,(int)y-7,14,14);
+        g.setFont(new Font("Courier New",Font.BOLD,9));
+        g.setColor(new Color(160,120,0));
+        g.drawString("$",(int)x-3,(int)y+4);
     }
 }
 
@@ -868,21 +756,17 @@ class Coin {
 // BULLET
 // ══════════════════════════════════════════════════════
 class Bullet {
-    double x, y, vx, vy;
-    int life = 60;
-    boolean fromPlayer;
-    Bullet(double x, double y, double angle, boolean fromPlayer) {
-        this.x=x; this.y=y;
-        double spd = 12;
-        vx = Math.cos(angle)*spd; vy = Math.sin(angle)*spd;
-        this.fromPlayer = fromPlayer;
+    double x,y,vx,vy; int life=60; boolean fromPlayer;
+    Bullet(double x,double y,double angle,boolean fp) {
+        this.x=x;this.y=y;fromPlayer=fp;
+        vx=Math.cos(angle)*12; vy=Math.sin(angle)*12;
     }
-    void update() { x+=vx; y+=vy; life--; }
-    void draw(Graphics2D g) {
-        g.setColor(fromPlayer ? GamePanel.NEON_YELLOW : GamePanel.BLOOD_RED);
-        g.fillOval((int)x-3,(int)y-3,6,6);
-        g.setColor(fromPlayer ? new Color(255,255,0,100) : new Color(255,0,0,80));
-        g.fillOval((int)x-6,(int)y-6,12,12);
+    void update(){x+=vx;y+=vy;life--;}
+    void draw(Graphics2D g){
+        g.setColor(fromPlayer?GamePanel.NEON_YELLOW:GamePanel.BLOOD_RED);
+        g.fillOval((int)x-3,(int)y-3,7,7);
+        g.setColor(fromPlayer?new Color(255,255,0,90):new Color(255,0,0,80));
+        g.fillOval((int)x-7,(int)y-7,14,14);
     }
 }
 
@@ -890,43 +774,28 @@ class Bullet {
 // COP
 // ══════════════════════════════════════════════════════
 class Cop {
-    double x, y;
-    int hp = 100, shootCooldown = 0;
-    Cop(int x, int y) { this.x=x; this.y=y; }
-    void update(Player p, int frame) {
-        double dx = p.x - x, dy = p.y - y;
-        double dist = Math.sqrt(dx*dx+dy*dy);
-        if (dist > 0) { x += dx/dist*1.5; y += dy/dist*1.5; }
-        shootCooldown = Math.max(0, shootCooldown-1);
+    double x,y; int hp=100, shootCD=0;
+    Cop(int x,int y){this.x=x;this.y=y;}
+    void update(Player p){
+        double dx=p.x-x, dy=p.y-y, d=Math.hypot(dx,dy);
+        if(d>0){x+=dx/d*1.6;y+=dy/d*1.6;}
+        shootCD=Math.max(0,shootCD-1);
     }
-    void draw(Graphics2D g) {
-        int cx=(int)x, cy=(int)y;
-        // Shadow
-        g.setColor(new Color(0,0,0,80));
-        g.fillOval(cx-10, cy+10, 20, 8);
-        // Body - police blue
-        g.setColor(new Color(20,30,160));
-        g.fillRoundRect(cx-8, cy-12, 16, 22, 4, 4);
-        // Head
-        g.setColor(new Color(255,200,140));
-        g.fillOval(cx-7, cy-22, 14, 14);
-        // Hat
-        g.setColor(new Color(10,10,100));
-        g.fillRect(cx-8, cy-24, 16, 5);
-        g.fillRect(cx-6, cy-29, 12, 7);
-        // Badge
-        g.setColor(new Color(255,220,0));
-        g.fillRect(cx-3, cy-8, 6, 6);
-        // HP bar
-        if (hp < 100) {
-            g.setColor(GamePanel.BLOOD_RED);
-            g.fillRect(cx-15, cy-36, 30, 4);
-            g.setColor(new Color(0,200,0));
-            g.fillRect(cx-15, cy-36, (int)(30.0*hp/100), 4);
+    void draw(Graphics2D g, int frame){
+        int cx=(int)x,cy=(int)y;
+        g.setColor(new Color(0,0,0,80)); g.fillOval(cx-10,cy+10,20,8);
+        g.setColor(new Color(20,30,165)); g.fillRoundRect(cx-8,cy-12,16,22,4,4);
+        g.setColor(new Color(255,200,140)); g.fillOval(cx-7,cy-22,14,14);
+        g.setColor(new Color(10,10,110)); g.fillRect(cx-8,cy-25,16,6); g.fillRect(cx-5,cy-30,10,7);
+        g.setColor(new Color(255,220,0)); g.fillRect(cx-3,cy-8,6,6);
+        // Siren blink
+        boolean blink=(frame/8)%2==0;
+        g.setColor(blink?new Color(255,50,50,200):new Color(50,50,255,200));
+        g.fillOval(cx-4,cy-34,8,6);
+        if(hp<100){
+            g.setColor(GamePanel.BLOOD_RED); g.fillRect(cx-15,cy-42,30,4);
+            g.setColor(new Color(0,200,0)); g.fillRect(cx-15,cy-42,(int)(30.0*hp/100),4);
         }
-        // Siren light
-        g.setColor(new Color(255,60,60, 150+100*(shootCooldown%10<5?1:0)));
-        g.fillOval(cx-4, cy-32, 8, 5);
     }
 }
 
@@ -934,25 +803,19 @@ class Cop {
 // EXPLOSION
 // ══════════════════════════════════════════════════════
 class Explosion {
-    int x, y, tick=0;
-    static final int MAX=25;
-    Explosion(int x, int y) { this.x=x; this.y=y; }
-    void update() { tick++; }
-    boolean done() { return tick >= MAX; }
-    void draw(Graphics2D g) {
-        float t = (float)tick/MAX;
-        int r = (int)(80*t);
-        // Outer
-        g.setColor(new Color(255,(int)(100*(1-t)),0,(int)(220*(1-t))));
-        g.fillOval(x-r, y-r, r*2, r*2);
-        // Inner white
-        int r2 = (int)(40*t);
-        g.setColor(new Color(255,255,220,(int)(200*(1-t))));
-        g.fillOval(x-r2, y-r2, r2*2, r2*2);
-        // Ring
-        g.setColor(new Color(255,80,0,(int)(150*(1-t))));
+    int x,y,tick=0; static final int MAX=28;
+    Explosion(int x,int y){this.x=x;this.y=y;}
+    void update(){tick++;}
+    boolean done(){return tick>=MAX;}
+    void draw(Graphics2D g){
+        float t=(float)tick/MAX;
+        int r=(int)(85*t);
+        g.setColor(new Color(255,(int)(100*(1-t)),0,(int)(220*(1-t)))); g.fillOval(x-r,y-r,r*2,r*2);
+        int r2=(int)(40*t);
+        g.setColor(new Color(255,255,220,(int)(210*(1-t)))); g.fillOval(x-r2,y-r2,r2*2,r2*2);
+        g.setColor(new Color(255,80,0,(int)(140*(1-t))));
         g.setStroke(new BasicStroke(3));
-        g.drawOval(x-(int)(90*t), y-(int)(90*t), (int)(180*t), (int)(180*t));
+        g.drawOval(x-(int)(95*t),y-(int)(95*t),(int)(190*t),(int)(190*t));
         g.setStroke(new BasicStroke(1));
     }
 }
@@ -961,21 +824,17 @@ class Explosion {
 // PARTICLE
 // ══════════════════════════════════════════════════════
 class Particle {
-    double x, y, vx, vy;
-    int life, maxLife;
-    Color color;
-    Particle(int x, int y, Color color) {
-        this.x=x; this.y=y; this.color=color;
-        double angle = Math.random()*Math.PI*2;
-        double speed = 1+Math.random()*4;
-        vx = Math.cos(angle)*speed; vy = Math.sin(angle)*speed;
-        maxLife = 20+(int)(Math.random()*20); life=maxLife;
+    double x,y,vx,vy; int life,maxLife; Color color;
+    Particle(int x,int y,Color c){
+        this.x=x;this.y=y;color=c;
+        double a=Math.random()*Math.PI*2, s=1+Math.random()*5;
+        vx=Math.cos(a)*s; vy=Math.sin(a)*s;
+        maxLife=20+(int)(Math.random()*20); life=maxLife;
     }
-    void update() { x+=vx; y+=vy; vy+=0.15; life--; }
-    void draw(Graphics2D g) {
-        float alpha = (float)life/maxLife;
-        g.setColor(new Color(color.getRed(),color.getGreen(),color.getBlue(),(int)(alpha*255)));
+    void update(){x+=vx;y+=vy;vy+=0.15;life--;}
+    void draw(Graphics2D g){
+        float al=(float)life/maxLife;
+        g.setColor(new Color(color.getRed(),color.getGreen(),color.getBlue(),(int)(al*255)));
         g.fillOval((int)x-3,(int)y-3,6,6);
     }
 }
-
